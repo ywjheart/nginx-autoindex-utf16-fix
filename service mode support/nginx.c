@@ -201,6 +201,7 @@ static char **ngx_os_environ;
 
 int ngx_cdecl
 main(int argc, char *const *argv)
+#if (NGX_WIN32)
 {
   if (ngx_enablesvc(mainimpl, argc, argv))
     return 1;
@@ -209,6 +210,7 @@ main(int argc, char *const *argv)
 
 int ngx_cdecl
 mainimpl(int argc, char *const *argv)
+#endif
 {
     ngx_buf_t        *b;
     ngx_log_t        *log;
