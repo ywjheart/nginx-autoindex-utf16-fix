@@ -36,7 +36,7 @@ static void ngx_unload_module(void *data);
 
 // added by yew
 #if (NGX_WIN32)
-int ngx_enablesvc(int (*pfn)(int, char*const*), int argc, char *const *argv);
+int ngx_service(int (*pfn)(int, char*const*), int argc, char *const *argv);
 int ngx_cdecl mainimpl(int argc, char *const *argv);
 #endif
 
@@ -203,7 +203,7 @@ int ngx_cdecl
 main(int argc, char *const *argv)
 #if (NGX_WIN32)
 {
-  if (ngx_enablesvc(mainimpl, argc, argv))
+  if (ngx_service(mainimpl, argc, argv))
     return 1;
   return mainimpl(argc,argv);
 }

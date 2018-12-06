@@ -59,6 +59,27 @@ HANDLE         ngx_cache_manager_mutex;
 char           ngx_cache_manager_mutex_name[NGX_PROCESS_SYNC_NAME];
 HANDLE         ngx_cache_manager_event;
 
+// added by yew: allow admin to send signal
+static
+HANDLE WINAPI myCreateEvent(
+  LPSECURITY_ATTRIBUTES lpEventAttributes,
+  BOOL                  bManualReset,
+  BOOL                  bInitialState,
+  LPCTSTR                lpName
+)
+{
+    SECURITY_ATTRIBUTES secAttr;
+    char secDesc[ SECURITY_DESCRIPTOR_MIN_LENGTH ];
+    secAttr.nLength = sizeof(secAttr);
+    secAttr.bInheritHandle = FALSE;
+    secAttr.lpSecurityDescriptor = &secDesc;
+    InitializeSecurityDescriptor(secAttr.lpSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
+    SetSecurityDescriptorDacl(secAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
+
+    return CreateEvent(&secAttr, bManualReset, bInitialState, lpName);
+}
+#undef CreateEvent
+#define CreateEvent myCreateEvent
 
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
@@ -1051,7 +1072,7 @@ static SERVICE_STATUS ngx_sstatus;
 
 static
 void WINAPI
-svchandler(DWORD controlCode)
+servicehandler(DWORD controlCode)
 {
     switch (controlCode)
     {
@@ -1065,24 +1086,33 @@ svchandler(DWORD controlCode)
 }
 
 static
-void WINAPI
-svcmain(DWORD argc, TCHAR *argv[])
+void serviceexit(void)
 {
-    ngx_sstatushandle = RegisterServiceCtrlHandler("", svchandler);
-    if(ngx_sstatushandle == NULL)
-      return;
-    ngx_sstatus.dwCurrentState = SERVICE_RUNNING;
-    SetServiceStatus(ngx_sstatushandle,&ngx_sstatus);
- 
-    // call main code
-    mainpfn(mainargc, mainargv);
-
     ngx_sstatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     ngx_sstatus.dwCurrentState = SERVICE_STOPPED;
     SetServiceStatus(ngx_sstatushandle,&ngx_sstatus);
 }
 
-int ngx_enablesvc(int (*pfn)(int, char*const*), int argc, char *const *argv)
+static
+void WINAPI
+servicemain(DWORD argc, TCHAR *argv[])
+{
+    ngx_sstatushandle = RegisterServiceCtrlHandler("", servicehandler);
+    if(ngx_sstatushandle == NULL)
+      return;
+    ngx_sstatus.dwCurrentState = SERVICE_RUNNING;
+    SetServiceStatus(ngx_sstatushandle,&ngx_sstatus);
+
+    // because main function may call exit directly, use atexit to register exit callback
+    atexit(serviceexit);
+ 
+    // call main code
+    mainpfn(mainargc, mainargv);
+
+    serviceexit();
+}
+
+int ngx_service(int (*pfn)(int, char*const*), int argc, char *const *argv)
 {
     SERVICE_TABLE_ENTRY st;
     TCHAR serviceName[100];
@@ -1105,7 +1135,7 @@ int ngx_enablesvc(int (*pfn)(int, char*const*), int argc, char *const *argv)
     ngx_sstatus.dwWaitHint = 0;
     
     st.lpServiceName = serviceName;
-    st.lpServiceProc = svcmain;
+    st.lpServiceProc = servicemain;
     if (StartServiceCtrlDispatcher(&st))
     {
       return 1;
